@@ -1,37 +1,59 @@
-﻿class Logic
+﻿#pragma once
+#include <random>
+#include <vector>
+
+#include "../Models/Move.h"
+#include "Board.h"
+#include "Config.h"
+
+const int INF = 1e9;
+
+class Logic
 {
 public:
-    // Конструктор Logic, который инициализирует доску и конфигурацию.
-    Logic(Board* board, Config* config);
+    Logic(Board* board, Config* config)
+    {
+        rand_eng = std::default_random_engine(
+            !((*config)("Bot", "NoRandom")) ? unsigned(time(0)) : 0);
+        scoring_mode = (*config)("Bot", "BotScoringType");
+        optimization = (*config)("Bot", "Optimization");
+    }
 
-    // Вектор для хранения всех возможных ходов для текущей позиции.
+    vector<move_pos> find_best_turns(const bool color);
+
+private:
+    vector<vector<POS_T>> make_turn(vector<vector<POS_T>> mtx, move_pos turn) const;
+
+    double calc_score(const vector<vector<POS_T>>& mtx, const bool first_bot_color) const;
+
+    // Удалены реализации данных методов:
+    // double find_first_best_turn(vector<vector<POS_T>> mtx, const bool color, const POS_T x, const POS_T y, size_t state,
+    //                             double alpha = -1);
+
+    // double find_best_turns_rec(vector<vector<POS_T>> mtx, const bool color, const size_t depth, double alpha = -1,
+    //                            double beta = INF + 1, const POS_T x = -1, const POS_T y = -1);
+
+public:
+    void find_turns(const bool color);
+
+    void find_turns(const POS_T x, const POS_T y);
+
+private:
+    void find_turns(const bool color, const vector<vector<POS_T>>& mtx);
+
+    void find_turns(const POS_T x, const POS_T y, const vector<vector<POS_T>>& mtx);
+
+public:
     vector<move_pos> turns;
-
-    // Флаг, указывающий, есть ли побеждения для текущего игрока.
     bool have_beats;
-
-    // Максимальная глубина поиска для алгоритма.
     int Max_depth;
 
 private:
-    // Генератор случайных чисел для перемешивания ходов.
     default_random_engine rand_eng;
-
-    // Режим оценки для бота (например, количество и потенциальные ходы).
     string scoring_mode;
-
-    // Опции оптимизации для алгоритма (например, уровень оптимизации).
     string optimization;
-
-    // Вектор, хранящий следующие ходы для бота.
     vector<move_pos> next_move;
-
-    // Вектор, хранящий состояния следующих ходов.
     vector<int> next_best_state;
-
-    // Указатель на объект доски, который содержит текущее состояние игры.
     Board* board;
-
-    // Указатель на объект конфигурации, содержащий настройки игры.
     Config* config;
 };
