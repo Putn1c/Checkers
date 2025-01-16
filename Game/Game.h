@@ -1,114 +1,126 @@
-﻿#pragma once
-#include <chrono>
-#include <thread>
-
-#include "../Models/Project_path.h"
-#include "Board.h"
-#include "Config.h"
-#include "Hand.h"
-#include "Logic.h"
-
-class Game
-{
-public:
-    Game() : board(config("WindowSize", "Width"), config("WindowSize", "Hight")), hand(&board), logic(&board, &config)
+﻿private:
+    Response player_turn(const bool color)
     {
-        ofstream fout(project_path + "log.txt", ios_base::trunc); // Открытие файла журнала для записи с очищением его содержимого
-        fout.close(); // Закрытие файла после открытия
-    }
+        // Функция для обработки хода игрока. 'color' указывает цвет (игрока), который сейчас ходит.
 
-    // Начало игры в шашки
-    int play()
-    {
-        auto start = chrono::steady_clock::now(); // Начало отсчета времени игры
-        if (is_replay) // Проверка, является ли игра повтором
+        vector<pair<POS_T, POS_T>> cells; // Вектор для хранения доступных ячеек для игрока
+        for (auto turn : logic.turns) // Перебор возможных ходов
         {
-            logic = Logic(&board, &config); // Инициализация логики игры
-            config.reload(); // Перезагрузка конфигурации
-            board.redraw(); // Перерисовка игрового поля
+            cells.emplace_back(turn.x, turn.y); // Добавление доступных ходов в вектор
         }
-        else
+
+        board.highlight_cells(cells); // Подсветка доступных для хода клеток на доске
+        move_pos pos = { -1, -1, -1, -1 }; // Инициализация переменной для хранения хода
+        POS_T x = -1, y = -1; // Координаты, выбранные игроком
+
+        // Пытаемся сделать первый ход
+        while (true)
         {
-            board.start_draw(); // Начало рисования игрового поля
-        }
-        is_replay = false; // Сброс флага повтора
+            auto resp = hand.get_cell(); // Ожидаем ввода от игрока для выбора клетки
+            if (get<0>(resp) != Response::CELL) // Если ввод не является выбором клетки
+                return get<0>(resp); // Вернуть ответ (QUIT, BACK и т.д.)
 
-        int turn_num = -1; // Номер текущего хода
-        bool is_quit = false; // Флаг выхода из игры
-        const int Max_turns = config("Game", "MaxNumTurns"); // Максимальное количество ходов из конфигурации
-        while (++turn_num < Max_turns) // Цикл по ходам, пока не достигнуто максимальное количество ходов
-        {
-            beat_series = 0; // Сброс серии побежденных фигур
-            logic.find_turns(turn_num % 2); // Поиск возможных ходов для текущего игрока
-            if (logic.turns.empty()) // Проверка, есть ли доступные ходы
-                break; // Выход из цикла, если нет доступных ходов
+            pair<POS_T, POS_T> cell{ get<1>(resp), get<2>(resp) }; // Получаем координаты выбранной клетки
 
-            // Установка уровня сложности бота на основе номера хода
-            logic.Max_depth = config("Bot", string((turn_num % 2) ? "Black" : "White") + string("BotLevel"));
-
-            if (!config("Bot", string("Is") + string((turn_num % 2) ? "Black" : "White") + string("Bot"))) // Проверка, играет ли бот в текущем ходу
+            bool is_correct = false; // Флаг, указывающий на правильность выбора
+            for (auto turn : logic.turns) // Проверка, является ли выбранный ход доступным
             {
-                auto resp = player_turn(turn_num % 2); // Ход игрока
-                if (resp == Response::QUIT) // Проверка, нажата ли кнопка выхода
+                if (turn.x == cell.first && turn.y == cell.second)
                 {
-                    is_quit = true; // Установка флага выхода
-                    break; // Выход из цикла
+                    is_correct = true; // Ход является корректным
+                    break; // Выходим из цикла
                 }
-                else if (resp == Response::REPLAY) // Проверка, нажата ли кнопка повтора
+                if (turn == move_pos{ x, y, cell.first, cell.second }) // Проверка, если это полный ход (движение уже инициировано)
                 {
-                    is_replay = true; // Установка флага повтора
+                    pos = turn; // Запоминаем полный ход
                     break; // Выход из цикла
-                }
-                else if (resp == Response::BACK) // Проверка, была ли нажата кнопка "Назад"
-                {
-                    if (config("Bot", string("Is") + string((1 - turn_num % 2) ? "Black" : "White") + string("Bot")) &&
-                        !beat_series && board.history_mtx.size() > 2) // Проверка условий для отката
-                    {
-                        board.rollback(); // Откат хода
-                        --turn_num; // Декремент номера хода
-                    }
-                    if (!beat_series) // Если нет серии побежденных фигур
-                        --turn_num; // Декремент номера хода
-
-                    board.rollback(); // Откат хода
-                    --turn_num; // Декремент номера хода
-                    beat_series = 0; // Сброс серии побежденных фигур
                 }
             }
-            else
-                bot_turn(turn_num % 2); // Ход бота
+            if (pos.x != -1) // Если был полный ход, выходим
+                break;
+
+            if (!is_correct) // Если выбранный ход неверный
+            {
+                if (x != -1) // Проверяем, была ли ранее сделана попытка хода
+                {
+                    board.clear_active(); // Сбрасываем активную клетку
+                    board.clear_highlight(); // Убираем подсветку
+                    board.highlight_cells(cells); // Повторная подсветка доступных клеток
+                }
+                x = -1; // Сбрасываем координаты
+                y = -1;
+                continue; // Переход к следующему циклу для нового ввода
+            }
+
+            // Обновляем координаты выбранной клетки
+            x = cell.first;
+            y = cell.second;
+            board.clear_highlight(); // Убираем подсветку
+            board.set_active(x, y); // Устанавливаем активную клетку
+
+            vector<pair<POS_T, POS_T>> cells2; // Вектор для хранения возможных ходов после выбора клетки
+            for (auto turn : logic.turns)
+            {
+                if (turn.x == x && turn.y == y) // Проверка, соответствуют ли координаты
+                {
+                    cells2.emplace_back(turn.x2, turn.y2); // Добавляем возможные ходы
+                }
+            }
+            board.highlight_cells(cells2); // Подсвечиваем новые доступные для хода клетки
         }
 
-        // Замер времени окончания игры
-        auto end = chrono::steady_clock::now();
-        ofstream fout(project_path + "log.txt", ios_base::app); // Открытие файла журнала для записи с добавлением к существующему содержимому
-        fout << "Game time: " << (int)chrono::duration<double, milli>(end - start).count() << " millisec\n"; // Запись времени игры в файл
-        fout.close(); // Закрытие файла
+        board.clear_highlight(); // Убираем подсветку перед выполнением хода
+        board.clear_active(); // Сбрасываем активную клетку
+        board.move_piece(pos, pos.xb != -1); // Перемещение фигуры на доске; передаем информацию о том, был ли сделан ход с побеждением
 
-        if (is_replay) // Если установлен флаг повтора
-            return play(); // Повторное начало игры
-        if (is_quit) // Если установлен флаг выхода
-            return 0; // Возврат 0 для выхода
+        if (pos.xb == -1) // Если не было побеждения
+            return Response::OK; // Успешный ход без побеждения
 
-        int res = 2; // Результат игры, 2 - ничья по умолчанию
-        if (turn_num == Max_turns) // Проверка, завершилась ли игра по времени
+        // Продолжаем побеждать, если возможно
+        beat_series = 1; // Устанавливаем счетчик серии побежденных фигур
+        while (true)
         {
-            res = 0; // Результат 0 - ничья
+            logic.find_turns(pos.x2, pos.y2); // Поиск возможных побеждающих ходов
+            if (!logic.have_beats) // Если больше нет доступных полей для побеждения
+                break; // Выход из цикла
+
+            vector<pair<POS_T, POS_T>> cells; // Вектор для подсветки доступных клеток для побеждения
+            for (auto turn : logic.turns)
+            {
+                cells.emplace_back(turn.x2, turn.y2); // Добавление доступных клеток
+            }
+            board.highlight_cells(cells); // Подсветка клеток
+            board.set_active(pos.x2, pos.y2); // Установка активной клетки
+
+            // Пытаемся сделать ход
+            while (true)
+            {
+                auto resp = hand.get_cell(); // Ждем ввода от игрока
+                if (get<0>(resp) != Response::CELL) // Если ввод не совпал с CELL
+                    return get<0>(resp); // Вернуть соответствующий ответ
+
+                pair<POS_T, POS_T> cell{ get<1>(resp), get<2>(resp) }; // Получаем координаты
+
+                bool is_correct = false; // Флаг правильного выбора
+                for (auto turn : logic.turns) // Проверка на корректность выбора
+                {
+                    if (turn.x2 == cell.first && turn.y2 == cell.second) // Если выбор корректен
+                    {
+                        is_correct = true; // Отметим, что выбор корректен
+                        pos = turn; // Запомним поведение игрока
+                        break; // Выход из цикла
+                    }
+                }
+                if (!is_correct) // Если неправильный выбор
+                    continue; // Сразу продолжаем ожидание правильного выбора
+
+                board.clear_highlight(); // Сбрасываем подсветку
+                board.clear_active(); // Убираем активную подсветку
+                beat_series += 1; // Увеличиваем серию побежденных фигур
+                board.move_piece(pos, beat_series); // Выполняем движение фигуры
+                break; // Выход из внутреннего цикла, если движение прошло успешно
+            }
         }
-        else if (turn_num % 2) // Проверка, кто выиграл
-        {
-            res = 1; // Результат 1 - победа второго игрока
-        }
-        board.show_final(res); // Показать окончательный результат игры
-        auto resp = hand.wait(); // Ожидание ввода игрока
-        if (resp == Response::REPLAY) // Проверка, была ли нажата кнопка повтора
-        {
-            is_replay = true; // Установка флага повтора
-            return play(); // Повторное начало игры
-        }
-        return res; // Возврат результата игры
+
+        return Response::OK; // Возврат успешного результата после завершения хода
     }
-
-private:
-    // Остальные методы и переменные класса ...
-};
