@@ -1,10 +1,11 @@
 ﻿private:
+    // Функция для обработки хода игрока. 'color' указывает цвет (игрока), который сейчас ходит.
     Response player_turn(const bool color)
     {
-        // Функция для обработки хода игрока. 'color' указывает цвет (игрока), который сейчас ходит.
-
         vector<pair<POS_T, POS_T>> cells; // Вектор для хранения доступных ячеек для игрока
-        for (auto turn : logic.turns) // Перебор возможных ходов
+
+        // Перебор возможных ходов
+        for (auto turn : logic.turns)
         {
             cells.emplace_back(turn.x, turn.y); // Добавление доступных ходов в вектор
         }
@@ -23,19 +24,23 @@
             pair<POS_T, POS_T> cell{ get<1>(resp), get<2>(resp) }; // Получаем координаты выбранной клетки
 
             bool is_correct = false; // Флаг, указывающий на правильность выбора
-            for (auto turn : logic.turns) // Проверка, является ли выбранный ход доступным
+
+            // Проверка, является ли выбранный ход доступным
+            for (auto turn : logic.turns)
             {
                 if (turn.x == cell.first && turn.y == cell.second)
                 {
                     is_correct = true; // Ход является корректным
                     break; // Выходим из цикла
                 }
-                if (turn == move_pos{ x, y, cell.first, cell.second }) // Проверка, если это полный ход (движение уже инициировано)
+                // Проверка, если это полный ход (движение уже инициировано)
+                if (turn == move_pos{ x, y, cell.first, cell.second })
                 {
                     pos = turn; // Запоминаем полный ход
                     break; // Выход из цикла
                 }
             }
+
             if (pos.x != -1) // Если был полный ход, выходим
                 break;
 
@@ -78,6 +83,8 @@
 
         // Продолжаем побеждать, если возможно
         beat_series = 1; // Устанавливаем счетчик серии побежденных фигур
+
+        // Цикл для проверки доступных ходов на побеждение
         while (true)
         {
             logic.find_turns(pos.x2, pos.y2); // Поиск возможных побеждающих ходов
@@ -102,7 +109,9 @@
                 pair<POS_T, POS_T> cell{ get<1>(resp), get<2>(resp) }; // Получаем координаты
 
                 bool is_correct = false; // Флаг правильного выбора
-                for (auto turn : logic.turns) // Проверка на корректность выбора
+
+                // Проверка на корректность выбора
+                for (auto turn : logic.turns)
                 {
                     if (turn.x2 == cell.first && turn.y2 == cell.second) // Если выбор корректен
                     {
@@ -111,6 +120,7 @@
                         break; // Выход из цикла
                     }
                 }
+
                 if (!is_correct) // Если неправильный выбор
                     continue; // Сразу продолжаем ожидание правильного выбора
 
